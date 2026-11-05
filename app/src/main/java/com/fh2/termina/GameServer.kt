@@ -18,7 +18,7 @@ import java.util.concurrent.Executors
  * Servidor HTTP minúsculo, só em 127.0.0.1.
  * - serve a pasta www do jogo (com Range, keep-alive)
  * - injeta o shim NW.js (nodeshim.js) e os controles de toque (touch.js) no index.html
- * - expõe /__fs/* (protegido por token) usado pelo shim de "fs" para saves e plugins
+ * - expõe a API de arquivos em /__fs/ (protegida por token) usado pelo shim de "fs" para saves e plugins
  */
 class GameServer(
     private val root: File,
