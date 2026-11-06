@@ -29,6 +29,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Toast
 import android.widget.TextView
 import java.io.File
 import java.util.UUID
@@ -38,6 +39,7 @@ class MainActivity : Activity() {
     private var web: WebView? = null
     private var server: GameServer? = null
     private val held = HashSet<Int>()
+    private var browseDir: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -141,7 +143,16 @@ class MainActivity : Activity() {
         if (web == null) startOrSetup()
     }
 
+    private fun isWww(d: File): Boolean =
+        File(d, "index.html").isFile && File(d, "js/rpg_core.js").isFile
+
     private fun findGame(): File? {
+        val saved = getSharedPreferences("fh2", MODE_PRIVATE).getString("gamePath", null)
+        if (saved != null) {
+            val f = File(saved)
+            if (isWww(f)) return f
+            if (isWww(File(f, "www"))) return File(f, "www")
+        }
         val roots = ArrayList<File>()
         getExternalFilesDir(null)?.let {
             roots.add(File(it, "game"))
@@ -208,6 +219,17 @@ class MainActivity : Activity() {
             b.setOnClickListener { requestStorageAccess() }
             col.addView(b)
         }
+        val games = File(Environment.getExternalStorageDirectory(), "MTool/Games")
+        col.addView(label(
+            "Diagnóstico: acesso a arquivos = " + (if (hasStorageAccess()) "SIM" else "NÃO") +
+                " | MTool/Games existe = " + (if (games.isDirectory) "sim" else "não") +
+                " | consigo listar = " + (if (games.list() != null) "sim" else "não"),
+            12f, false
+        ))
+        val manual = Button(ctx)
+        manual.text = "Escolher a pasta manualmente"
+        manual.setOnClickListener { showBrowser(Environment.getExternalStorageDirectory()) }
+        col.addView(manual)
         val retry = Button(ctx)
         retry.text = "Procurar novamente"
         retry.setOnClickListener { startOrSetup() }
@@ -220,10 +242,93 @@ class MainActivity : Activity() {
         hideSystemBars()
     }
 
+    // ------------------------------------------------------------------ escolha manual da pasta
+
+    private fun browseUp() {
+        val d = browseDir ?: return
+        val parent = d.parentFile
+        if (parent == null || d.absolutePath == Environment.getExternalStorageDirectory().absolutePath) {
+            browseDir = null
+            showSetup()
+        } else {
+            showBrowser(parent)
+        }
+    }
+
+    private fun tryUse(dir: File) {
+        val www = if (isWww(dir)) dir else File(dir, "www").takeIf { isWww(it) }
+        if (www == null) {
+            Toast.makeText(
+                this,
+                "Esta pasta não contém o jogo (precisa ter index.html e js/rpg_core.js). Entre na pasta do jogo ou na pasta www.",
+                Toast.LENGTH_LONG
+            ).show()
+        } else {
+            getSharedPreferences("fh2", MODE_PRIVATE).edit().putString("gamePath", www.absolutePath).apply()
+            browseDir = null
+            startGame(www)
+        }
+    }
+
+    private fun showBrowser(dir: File) {
+        browseDir = dir
+        val ctx = this
+        val col = LinearLayout(ctx)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(32, 32, 32, 32)
+
+        fun tv(text: String, size: Float): TextView {
+            val t = TextView(ctx)
+            t.text = text
+            t.textSize = size
+            t.setTextColor(Color.WHITE)
+            t.setPadding(0, 0, 0, 16)
+            return t
+        }
+
+        col.addView(tv("Escolha a pasta do jogo", 20f))
+        col.addView(tv(dir.absolutePath, 13f))
+        val use = Button(ctx)
+        use.text = "✔ Usar esta pasta"
+        use.setOnClickListener { tryUse(dir) }
+        col.addView(use)
+        val up = Button(ctx)
+        up.text = "⬆ Subir uma pasta"
+        up.setOnClickListener { browseUp() }
+        col.addView(up)
+
+        val subs = dir.listFiles()
+        if (subs == null) {
+            col.addView(tv("Não consigo listar esta pasta. Conceda o acesso a todos os arquivos.", 14f))
+            val g = Button(ctx)
+            g.text = "Conceder acesso a arquivos"
+            g.setOnClickListener { requestStorageAccess() }
+            col.addView(g)
+        } else {
+            val dirs = subs.filter { it.isDirectory && !it.name.startsWith(".") }.sortedBy { it.name.lowercase() }
+            if (dirs.isEmpty()) col.addView(tv("(sem subpastas)", 14f))
+            for (s in dirs) {
+                val b = Button(ctx)
+                val mark = if (isWww(s) || isWww(File(s, "www"))) "★ " else ""
+                b.setAllCaps(false)
+                b.text = mark + "📁 " + s.name
+                b.setOnClickListener { showBrowser(s) }
+                col.addView(b)
+            }
+        }
+
+        val sv = ScrollView(ctx)
+        sv.setBackgroundColor(Color.BLACK)
+        sv.addView(col)
+        setContentView(sv)
+        hideSystemBars()
+    }
+
     // ------------------------------------------------------------------ jogo
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun startGame(www: File) {
+        browseDir = null
         val token = UUID.randomUUID().toString().replace("-", "")
         val srv = GameServer(www, token) { name ->
             try {
@@ -329,6 +434,10 @@ class MainActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
+        if (web == null && browseDir != null && e.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (e.action == KeyEvent.ACTION_UP) browseUp()
+            return true
+        }
         if (web != null) {
             if (e.keyCode == KeyEvent.KEYCODE_BACK) {
                 if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) setKey(27, true, false)
