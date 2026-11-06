@@ -330,6 +330,15 @@
     document.dispatchEvent(e);
   };
 
+  // erros de carregamento de scripts/imagens e promises rejeitadas -> console (o app mostra na tela)
+  window.addEventListener('error', function (e) {
+    var t = e.target;
+    if (t && t !== window && (t.src || t.href)) console.error('FALHA ao carregar: ' + (t.src || t.href));
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    console.error('Promise rejeitada: ' + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason));
+  });
+
   // impede o menu de contexto / seleção por toque longo
   document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   // garante que o áudio destrave no primeiro toque
