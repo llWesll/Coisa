@@ -338,7 +338,7 @@ class MainActivity : Activity() {
     private fun startGame(www: File) {
         browseDir = null
         val token = UUID.randomUUID().toString().replace("-", "")
-        val srv = GameServer(www, token) { name ->
+        val srv = GameServer(www, token, { msg -> addLog(msg, true) }) { name ->
             try {
                 assets.open("shim/$name").use { it.readBytes() }
             } catch (e: Exception) {
