@@ -23,6 +23,7 @@ import java.util.concurrent.Executors
 class GameServer(
     private val root: File,
     private val token: String,
+    private val onError: (String) -> Unit,
     private val shimReader: (String) -> ByteArray?
 ) {
     private class Req(
@@ -174,7 +175,16 @@ class GameServer(
             return false
         }
         val req = Req(method, path, query, headers, body, keep)
-        return route(req, out)
+        return try {
+            route(req, out)
+        } catch (e: Throwable) {
+            // em vez de fechar a conexão sem resposta, devolve o erro (aparece na tela do app)
+            val msg = "Servidor: " + req.method + " " + req.path + " -> " + e.toString()
+            onError(msg)
+            val trace = e.stackTrace.take(8).joinToString("\n")
+            sendText(out, 500, "Internal Server Error", msg + "\n" + trace, false)
+            false
+        }
     }
 
     // ------------------------------------------------------------------ rotas
