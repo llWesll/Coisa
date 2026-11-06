@@ -9,9 +9,12 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Environment
 import android.os.Process
 import android.provider.Settings
+import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -19,8 +22,11 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebResourceError
+import android.webkit.WebResourceResponse
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -40,6 +46,8 @@ class MainActivity : Activity() {
     private var server: GameServer? = null
     private val held = HashSet<Int>()
     private var browseDir: File? = null
+    private val logLines = ArrayList<String>()
+    private var logView: TextView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -349,7 +357,6 @@ class MainActivity : Activity() {
         wv.isHorizontalScrollBarEnabled = false
         wv.isLongClickable = false
         wv.setOnLongClickListener { true }
-        wv.setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
         val s = wv.settings
         s.javaScriptEnabled = true
@@ -378,17 +385,69 @@ class MainActivity : Activity() {
                 runOnUiThread { recreate() }
                 return true
             }
+
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                val u = request?.url?.toString() ?: "?"
+                addLog("ERRO de rede: " + u + " (" + error?.description + ")", request?.isForMainFrame == true || u.endsWith(".js"))
+            }
+
+            override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
+                val u = request?.url?.toString() ?: "?"
+                val important = u.endsWith(".js") || u.endsWith("index.html") || u.endsWith(".json")
+                addLog("HTTP " + errorResponse?.statusCode + ": " + u, important)
+            }
         }
-        wv.webChromeClient = WebChromeClient()
+        wv.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(cm: ConsoleMessage?): Boolean {
+                if (cm != null && cm.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                    addLog("JS: " + cm.message() + " (" + cm.sourceId().substringAfterLast('/') + ":" + cm.lineNumber() + ")", true)
+                }
+                return true
+            }
+        }
 
         val frame = FrameLayout(this)
         frame.setBackgroundColor(Color.BLACK)
         frame.addView(wv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        val lv = TextView(this)
+        lv.setTextColor(Color.YELLOW)
+        lv.setBackgroundColor(0xDD000000.toInt())
+        lv.textSize = 10f
+        lv.typeface = android.graphics.Typeface.MONOSPACE
+        lv.setPadding(12, 8, 12, 8)
+        lv.visibility = View.GONE
+        lv.setOnClickListener { lv.visibility = View.GONE }
+        frame.addView(lv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
+        logView = lv
+        logLines.clear()
         setContentView(frame)
         web = wv
         hideSystemBars()
         wv.requestFocus()
         wv.loadUrl("http://127.0.0.1:$port/index.html")
+
+        // vigia: se em 15 s o jogo não iniciou, mostra o log na tela
+        Handler(Looper.getMainLooper()).postDelayed({
+            web?.evaluateJavascript(
+                "(typeof SceneManager!=='undefined'&&SceneManager._scene)?'1':'0'"
+            ) { r ->
+                if (r != "\"1\"" && r != "1") {
+                    addLog("O jogo não iniciou em 15 s (SceneManager sem cena). Veja os erros acima/abaixo e me envie um print.", true)
+                }
+            }
+        }, 15000)
+    }
+
+    private fun addLog(line: String, show: Boolean) {
+        runOnUiThread {
+            logLines.add(line)
+            if (logLines.size > 30) logLines.removeAt(0)
+            val lv = logView
+            if (lv != null) {
+                lv.text = "(toque aqui para fechar)\n" + logLines.joinToString("\n")
+                if (show) lv.visibility = View.VISIBLE
+            }
+        }
     }
 
     inner class Bridge {
