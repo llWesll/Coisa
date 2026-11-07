@@ -364,7 +364,7 @@ class GameServer(
         if (req.method != "HEAD" && length > 0) {
             RandomAccessFile(f, "r").use { raf ->
                 raf.seek(start)
-                val buf = ByteArray(64 * 1024)
+                val buf = ByteArray(256 * 1024)
                 var left = length
                 while (left > 0) {
                     val r = raf.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
