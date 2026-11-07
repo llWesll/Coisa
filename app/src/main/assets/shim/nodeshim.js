@@ -313,6 +313,31 @@
   if (!window.global) window.global = window;
   window.close = function () { if (BR) BR.exit(); };
 
+  // ---------------------------------------------------------------- WebGL: precisão alta nos shaders
+  // GPUs de celular usam "mediump" (16 bits) e isso causa riscas/falhas nas bordas dos tiles.
+  (function () {
+    try {
+      var c = document.createElement('canvas');
+      var gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+      var ok = false;
+      if (gl) {
+        var f = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
+        ok = !!(f && f.precision > 0);
+        var lose = gl.getExtension('WEBGL_lose_context');
+        if (lose) lose.loseContext();
+      }
+      if (!ok) return;
+      [window.WebGLRenderingContext, window.WebGL2RenderingContext].forEach(function (C) {
+        if (!C) return;
+        var orig = C.prototype.shaderSource;
+        C.prototype.shaderSource = function (sh, src) {
+          if (typeof src === 'string') src = src.replace(/precision\s+(?:mediump|lowp)\s+float\s*;/g, 'precision highp float;');
+          return orig.call(this, sh, src);
+        };
+      });
+    } catch (e) {}
+  })();
+
   // ---------------------------------------------------------------- teclas sintéticas (gamepad nativo / controles de toque)
   var KEYS = {
     37: ['ArrowLeft', 'ArrowLeft'], 38: ['ArrowUp', 'ArrowUp'], 39: ['ArrowRight', 'ArrowRight'], 40: ['ArrowDown', 'ArrowDown'],
