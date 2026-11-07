@@ -194,9 +194,14 @@ class MainActivity : Activity() {
         }
     }
 
+    private var askedPermission = false
+
     private fun startOrSetup() {
         val www = findGame()
-        if (www == null) showSetup() else startGame(www)
+        val appDir = getExternalFilesDir(null)?.absolutePath
+        val insideAppDir = www != null && appDir != null && www.absolutePath.startsWith(appDir)
+        // fora da pasta do app é preciso o acesso a todos os arquivos (senão o jogo não consegue ler/gravar)
+        if (www == null || (!insideAppDir && !hasStorageAccess())) showSetup() else startGame(www)
     }
 
     private fun showSetup() {
@@ -216,6 +221,10 @@ class MainActivity : Activity() {
         }
 
         val appDir = getExternalFilesDir(null)?.absolutePath ?: "(indisponível)"
+        if (!hasStorageAccess() && !askedPermission) {
+            askedPermission = true
+            requestStorageAccess() // pede a permissão automaticamente na primeira vez
+        }
         col.addView(label("Fear & Hunger 2: Termina", 22f, true))
         col.addView(label("Não encontrei a pasta do jogo (a que contém index.html e js/rpg_core.js, normalmente chamada \"www\").", 15f, false))
         col.addView(label("Coloque a pasta do jogo em um destes lugares:", 15f, false))
